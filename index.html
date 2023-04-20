@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>深度图预览</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <style>
+        * {padding: 0; margin: 0;}
+        html, body {height: 100%;}
+        #container { width: 100%; height: 100%;}
+    </style>
+</head>
+<body>
+<div id="container"></div>
+<script async src="./Static/Three/js/es-module-shims.js"></script>
+
+<script type="importmap">
+{
+    "imports": {
+        "three": "./Static/Three/js/three.module.js",
+        "three/addons/": "./jsm/"
+    }
+}
+</script>
+
+<script type="module">
+    import * as THREE from 'three';
+
+    import Stats from './Static/Three/libs/stats.module.js';
+    import {OrbitControls} from './Static/Three/js/OrbitControls.js';
+
+    window.ThreeModel = {
+        Controls : null,
+        camera : null,
+        scene : null,
+        mesh : null,
+        stats : null,
+        renderer : null,
+        helper : null,
+        container : null,
+        spotLight : null,
+        Width : 0,
+        Height : 0,
+        // 定义射线和指针
+        raycaster : new THREE.Raycaster(),
+        pointer : new THREE.Vector2(),
+        geometry : null,
+        data :  null,
+        getSize(){
+            this.Width = this.container.clientWidth;
+            this.Height = this.container.clientHeight;
+        },
+        verticesCalc(depth=5){
+            // 获取顶点数组
+            const vertices = this.geometry.attributes.position.array;
+            // 根据高度数据设置顶点高度
+            for ( let i = 0, j = 0, l = vertices.length; i < l; i ++, j += 3 ) {
+                vertices[ j + 1 ] = this.data[ i ] * depth;
+            }
+        },
+        init(data, canvas, domSelect='') {
+            this.data = data;
+            // 获取容器
+            this.container = document.querySelector(domSelect);
+            this.container.innerHTML = '';
+            this.getSize();
+
+            const worldHalfWidth = canvas.width / 2, worldHalfDepth = canvas.height / 2;
+
+            // 创建渲染器
+            this.renderer = new THREE.WebGLRenderer( { antialias: true } );
+            this.renderer.setPixelRatio( window.devicePixelRatio );
+
+            this.container.appendChild( this.renderer.domElement );
+            this.renderer.setSize( this.Width, this.Height );
+
+            // 创建场景
+            this.scene = new THREE.Scene();
+            this.scene.background = new THREE.Color( 0x000000 );
+            // 环境光
+            this.ambientLight = new THREE.AmbientLight(0xffffff) // 创建环境光
+            this.scene.add(this.ambientLight) // 将环境光添加到场景
+
+            this.ambientLight = new THREE.AmbientLightProbe(0xffffff, 2) // 创建环境光
+            this.scene.add(this.ambientLight) // 将环境光添加到场景
+
+            const directionalLight = new THREE.DirectionalLight( 0xffffff, 0.05 );
+            this.scene.add( directionalLight );
+
+
+            // 创建相机
+            this.camera = new THREE.PerspectiveCamera(75, canvas.width / canvas.height, 0.1, 20000 );
+            // 创建控制器
+            this.Controls = new OrbitControls( this.camera, this.renderer.domElement );
+            this.Controls.enableDamping = true; // 启用阻尼
+            this.Controls.dampingFactor = 0.25; // 动态阻尼系数 就是鼠标拖拽旋转灵敏度，阻尼越小越灵敏
+            this.Controls.enableZoom = true; // 启用缩放
+            this.Controls.autoRotate = true; // 自动旋转
+            this.Controls.autoRotateSpeed = 1.0; // 自动旋转速度
+            this.Controls.enablePan = true // 是否开启右键拖拽
+
+            this.Controls.maxPolarAngle = Math.PI / 2;
+
+            // 设置控制器的目标点
+            this.Controls.target.y = data[ worldHalfWidth + worldHalfDepth * canvas.width ] + canvas.height;
+
+
+
+            // 设置相机位置
+            this.camera.position.y = 10000; // 设置相机位置
+            this.camera.position.z = 2000; // 设置相机位置
+
+
+
+            // 创建平面几何体
+            this.geometry = new THREE.PlaneGeometry( 7500, 7500, canvas.width - 1, canvas.height - 1 );
+            this.geometry.rotateX( - Math.PI / 2 );
+            this.geometry.center(); //居中显示
+            this.verticesCalc();
+
+            let texture = new THREE.CanvasTexture( canvas );
+            texture.wrapS = THREE.ClampToEdgeWrapping;
+            texture.wrapT = THREE.ClampToEdgeWrapping;
+            // 创建网格
+            this.mesh = new THREE.Mesh( this.geometry, new THREE.MeshPhongMaterial( { map: texture, color: "#ff5533", shininess: 500 } ) );
+            this.mesh.castShadow = true; // 设置网格投射阴影
+            this.mesh.receiveShadow = true; // 设置网格接收阴影
+            this.scene.add( this.mesh );
+
+            // 创建辅助网格
+            const geometryHelper = new THREE.ConeGeometry( 20, 100, 3 );
+            geometryHelper.translate( 0, 50, 0 );
+            geometryHelper.rotateX( Math.PI / 2 );
+            this.helper = new THREE.Mesh( geometryHelper, new THREE.MeshNormalMaterial() );
+            this.scene.add( this.helper );
+
+            // 创建性能监视器
+            this.stats = new Stats();
+            this.container.appendChild( this.stats.dom );
+            const self = this;
+            // 监听鼠标移动事件
+            this.container.addEventListener( 'pointermove', function(e){
+                self.onPointerMove(e);
+            });
+
+            // 监听窗口大小变化事件
+            window.addEventListener( 'resize', function (e) {
+                self.onWindowResize(e);
+            } );
+            self.onWindowResize();
+            this.animate();
+        },
+        animate() {
+            const self = this;
+            requestAnimationFrame(function(e){
+                self.animate(e);
+            });
+
+            this.renderer.render(this.scene, this.camera);
+            this.Controls.update();
+            this.stats.update();
+
+        },
+        onWindowResize() {
+            this.Width = this.container.clientWidth;
+            this.Height = this.container.clientHeight;
+            // 更新相机和渲染器的尺寸
+            this.camera.aspect = this.Width / this.Height;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize( this.Width, this.Height );
+        },
+        onPointerMove(event) {
+
+            this.pointer.x = (event.clientX / this.renderer.domElement.clientWidth) * 2 - 1;
+            this.pointer.y = -(event.clientY / this.renderer.domElement.clientHeight) * 2 + 1;
+            this.raycaster.setFromCamera(this.pointer, this.camera);
+
+            // See if the ray from the camera into the world hits one of our meshes
+            const intersects = this.raycaster.intersectObject(this.mesh);
+
+            // Toggle rotation bool for meshes that we clicked
+            if (intersects.length > 0) {
+
+                this.helper.position.set(0, 0, 0);
+                this.helper.lookAt(intersects[0].face.normal);
+
+                this.helper.position.copy(intersects[0].point);
+
+            }
+
+        }
+    }
+
+    !function (img){
+        /**
+         * 根据RGB得到深度值
+         * @param R
+         * @param G
+         * @param B
+         * @returns {number}
+         */
+        function getLightness(R, G, B){
+            let r = R / 255,
+                g = G / 255,
+                b = B / 255,
+                cmin = Math.min(r, g, b),
+                cmax = Math.max(r, g, b),
+                light = (cmax + cmin) / 2;
+
+            light = Math.round(light * 100);
+
+            return light;
+        }
+
+        /**
+         * URL GET条件转对象
+         * Author: KSAUI(www.ksaui.com)
+         * @param url
+         * @returns {{}}
+         */
+        function urlGetObject(url) {
+            var param = {};
+            if ($.isString(url)) {
+                if (url.substring(0, 1) === '?') {
+                    url = url.substring(1);
+                }
+                $.loop(url.split("&"), function (val) {
+                    val = val.split('=');
+                    if (val['1']) {
+                        val['1'] = decodeURIComponent(val['1']);
+                        param[val['0']] = val['1'];
+                    }
+                });
+            }
+            return param;
+        }
+        let urlParam = urlGetObject(window.location.href);
+        if(urlParam.src){
+            img.src = urlParam.src;
+            img.crossOrigin = 'anonymous';
+            img.onload = function(){
+                var canvas = document.createElement("canvas"),
+                c = canvas.getContext("2d");
+                c.width = img.width;
+                c.height = img.height;
+
+                canvas.width = img.width;
+                canvas.height = img.height;
+                c.fillRect(0, 0, img.width, img.height)
+                c.clearRect(0, 0, img.width, img.height);
+                c.drawImage(img, 0, 0, img.width, img.height);
+
+                let imgData = c.getImageData(0, 0, img.width, img.height), data = imgData.data;
+                let newData = [];
+                for (let i = 0; i < data.length; i += 4) {
+                    newData.push(getLightness(data[i], data[i + 1], data[i + 2]))
+                }
+                // 初始化
+                ThreeModel.init(newData, canvas, '#container');
+
+            };
+
+        }else{
+            alert('请传入url参数：src');
+        }
+    }(new Image());
+
+
+</script>
+
+</body>
+</html>
