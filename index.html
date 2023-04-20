@@ -220,11 +220,12 @@
          */
         function urlGetObject(url) {
             var param = {};
-            if ($.isString(url)) {
+            if (typeof (url) == "string") {
                 if (url.substring(0, 1) === '?') {
                     url = url.substring(1);
                 }
-                $.loop(url.split("&"), function (val) {
+                url.split("&").forEach(function(val){
+                    console.log(val)
                     val = val.split('=');
                     if (val['1']) {
                         val['1'] = decodeURIComponent(val['1']);
@@ -234,7 +235,8 @@
             }
             return param;
         }
-        let urlParam = urlGetObject(window.location.href);
+
+        let urlParam = urlGetObject(window.location.search);
         if(urlParam.src){
             img.src = urlParam.src;
             img.crossOrigin = 'anonymous';
